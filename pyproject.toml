@@ -30,8 +30,16 @@ packages = [
 ]
 
 [tool.poetry.dependencies]
-python = ">=3.10, <4.0"
+python = ">=3.10, <3.13"
 click = "*"
+numpy = "^1.26.1"
+pandas = "^2.1.2"
+xarray = "^2023.10.1"
+gcsfs = "^2023.10.0"
+fsspec = "^2023.10.0"
+dask = "^2023.10.1"
+esgf-pyclient = "^0.3.1"
+scipy = "^1.11.3"
 
 [tool.poetry.dev-dependencies]
 autoflake = "*"
@@ -57,6 +65,9 @@ pytest-cov = "*"
 python-kacl = "*"
 pyupgrade = "*"
 tryceratops = "*"
+
+[tool.poetry.group.dev.dependencies]
+pandas-stubs = "^2.1.1.230928"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
@@ -99,11 +110,14 @@ warn_return_any = false
 check_untyped_defs = true
 show_error_codes = true
 
-# Uncomment the following lines and add packages to the "module" list to
-# handle mypy errors when 3rd party packages are not typed.
-# [[tool.mypy.overrides]]
-# module = []
-# ignore_missing_imports = true
+ [[tool.mypy.overrides]]
+ module = [
+     "scipy.*",
+     "fsspec",
+     "gcsfs",
+     "pyesgf.*",
+ ]
+ ignore_missing_imports = true
 
 [tool.tryceratops]
 ignore=["TRY003"]
