@@ -1,0 +1,18 @@
+{
+  "template": "https://github.com/collijk/python-package-cookiecutter",
+  "commit": "950d4976f7804b85d7a542197422664419ff94b3",
+  "checkout": null,
+  "context": {
+    "cookiecutter": {
+      "author_name": "James Collins",
+      "author_email": "collijk1@gmail.com",
+      "github_username": "collijk",
+      "project_name": "cmip_downscale",
+      "project_slug": "cmip_downscale",
+      "package_name": "cmip_downscale",
+      "project_short_description": "Downscaling of CMIP6 data.",
+      "_template": "https://github.com/collijk/python-package-cookiecutter"
+    }
+  },
+  "directory": null
+}
