@@ -303,7 +303,7 @@ def chelsa_cmip6(
         for start, end, period in [(refps, refpe, 'hist'), (fefps, fefpe, 'futr')]:
             for var in ["pr", "tas", "tasmax", "tasmin"]:
                 file_name = file_template.format(var=var, start=start, end=end)
-                getattr(dc, period + "_" + var).to_netcdf(file_name)
+                dc[f"{period}_{var}"].to_netcdf(file_name)
 
         print("saving bioclims:")
         for start, end, data in [(refps, refpe, biohist), (fefps, fefpe, biofutr)]:
