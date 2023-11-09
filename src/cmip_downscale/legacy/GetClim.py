@@ -374,18 +374,13 @@ class DeltaChangeClim:
                 interp = cmip_anomaly.interp(lat=chelsa['lat'], lon=chelsa['lon'])
                 result = op(chelsa, interp)
 
+                year = getattr(self, per + "_year")
+                result["month"] = [
+                    datetime.datetime(year, month, 15)
+                    for month in result["month"].values
+                ]
+
                 setattr(self, str(per + "_" + var), result)
-
-
-        for var in ["tas", "tasmax", "tasmin", "pr"]:
-            getattr(self, str("futr_" + var))["month"] = [
-                datetime.datetime(self.futr_year, month, 15)
-                for month in getattr(self, str(per + "_" + var))["month"].values
-            ]
-            getattr(self, str("hist_" + var))["month"] = [
-                datetime.datetime(self.hist_year, month, 15)
-                for month in getattr(self, str(per + "_" + var))["month"].values
-            ]
 
         if output:
             print("saving files to :" + output)
