@@ -426,91 +426,18 @@ def chelsa_cmip6(
     biohist = BioClim(dc.hist_pr, dc.hist_tas, dc.hist_tasmax, dc.hist_tasmin)
     biofutr = BioClim(dc.futr_pr, dc.futr_tas, dc.futr_tasmax, dc.futr_tasmin)
 
+    assert cmip6_clim.tas.institution_id == institution_id
+    assert cmip6_clim.tas.source_id == source_id
+    assert cmip6_clim.tas.experiment_id == experiment_id
+    assert cmip6_clim.tas.member_id == member_id
+    assert cmip6_clim.tas.refps == refps
+    assert cmip6_clim.tas.refpe == refpe
+    assert cmip6_clim.tas.fefps == fefps
+    assert cmip6_clim.tas.fefpe == fefpe
+
     print("saving bioclims:")
-    for n in range(1, 20):
-        name = (
-            output
-            + "CHELSA"
-            + "_"
-            + cm_climat.tas.institution_id
-            + "_"
-            + cm_climat.tas.source_id
-            + "_"
-            + str("bio" + str(n))
-            + "_"
-            + cm_climat.tas.experiment_id
-            + "_"
-            + cm_climat.tas.member_id
-            + "_"
-            + cm_climat.tas.refps
-            + "_"
-            + cm_climat.tas.refpe
-            + ".nc"
-        )
-        getattr(biohist, "bio" + str(n))().to_netcdf(name)
-
-    for n in ["gdd"]:
-        name = (
-            output
-            + "CHELSA"
-            + "_"
-            + cm_climat.tas.institution_id
-            + "_"
-            + cm_climat.tas.source_id
-            + "_"
-            + str(n)
-            + "_"
-            + cm_climat.tas.experiment_id
-            + "_"
-            + cm_climat.tas.member_id
-            + "_"
-            + cm_climat.tas.refps
-            + "_"
-            + cm_climat.tas.refpe
-            + ".nc"
-        )
-        getattr(biohist, str(n))().to_netcdf(name)
-
-    for n in range(1, 20):
-        name = (
-            output
-            + "CHELSA"
-            + "_"
-            + cm_climat.tas.institution_id
-            + "_"
-            + cm_climat.tas.source_id
-            + "_"
-            + str("bio" + str(n))
-            + "_"
-            + cm_climat.tas.experiment_id
-            + "_"
-            + cm_climat.tas.member_id
-            + "_"
-            + cm_climat.tas.fefps
-            + "_"
-            + cm_climat.tas.fefpe
-            + ".nc"
-        )
-        getattr(biofutr, "bio" + str(n))().to_netcdf(name)
-
-    for n in ["gdd"]:
-        name = (
-            output
-            + "CHELSA"
-            + "_"
-            + cm_climat.tas.institution_id
-            + "_"
-            + cm_climat.tas.source_id
-            + "_"
-            + str(n)
-            + "_"
-            + cm_climat.tas.experiment_id
-            + "_"
-            + cm_climat.tas.member_id
-            + "_"
-            + cm_climat.tas.fefps
-            + "_"
-            + cm_climat.tas.fefpe
-            + ".nc"
-        )
-        getattr(biofutr, str(n))().to_netcdf(name)
+    name_template = f"CHELSA_{institution_id}_{source_id}_{{var}}_{experiment_id}_{member_id}_{{start}}_{{end}}.nc"
+    for start, end, data in [(refps, refpe, biohist), (fefps, fefpe, biofutr)]:
+        for var in ['gdd'] + [f'bio{i}' for i in range(1, 20)]:
+            file_name = name_template.format(var=var, start=start, end=end)
+            getattr(data, var)().to_netcdf(file_name)
