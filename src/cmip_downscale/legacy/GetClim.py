@@ -2,6 +2,7 @@ import datetime
 import operator
 
 import numpy as np
+import xarray as xr
 
 from cmip_downscale.legacy.BioClim import BioClim
 from cmip_downscale.legacy.extract import get_chelsa, get_cmip, get_esgf
@@ -42,113 +43,36 @@ class cmip6_clim:
         use_esgf,
         node,
     ):
-        self.activity_id = activity_id
-        self.table_id = table_id
-        self.variable_id = variable_id
-        self.experiment_id = experiment_id
-        self.institution_id = institution_id
-        self.source_id = source_id
-        self.member_id = member_id
-        self.refps = ref_startdate
-        self.refpe = ref_enddate
-        self.fefps = fut_startdate
-        self.fefpe = fut_enddate
-        self.use_esgf = use_esgf
-        self.node = node
+        kwargs = {
+            "table_id": table_id,
+            "variable_id": variable_id,
+            "source_id": source_id,
+            "member_id": member_id,
+        }
+        if use_esgf:
+            loader = get_esgf
+            kwargs['node'] = node
+            historical_activity_id = "CMIP6"
+        else:
+            loader = get_cmip
+            kwargs['institution_id'] = institution_id
+            historical_activity_id = "CMIP6"
 
-        if self.use_esgf is True:
-            self.future_period = (
-                get_esgf(
-                    activity_id=self.activity_id,
-                    table_id=self.table_id,
-                    variable_id=self.variable_id,
-                    experiment_id=self.experiment_id,
-                    source_id=self.source_id,
-                    member_id=self.member_id,
-                    node=self.node,
-                )
-                .sel(time=slice(self.fefps, self.fefpe))
-                .groupby("time.month")
-                .mean("time")
-            )
-        if self.use_esgf is False:
-            self.future_period = (
-                get_cmip(
-                    self.activity_id,
-                    self.table_id,
-                    self.variable_id,
-                    self.experiment_id,
-                    self.institution_id,
-                    self.source_id,
-                    self.member_id,
-                )
-                .sel(time=slice(self.fefps, self.fefpe))
-                .groupby("time.month")
-                .mean("time")
-            )
-        # print("future data loaded... ")
-        if self.use_esgf is True:
-            self.historical_period = (
-                get_esgf(
-                    activity_id="CMIP6",
-                    table_id=self.table_id,
-                    variable_id=self.variable_id,
-                    experiment_id="historical",
-                    source_id=self.source_id,
-                    member_id=self.member_id,
-                    node=self.node,
-                )
-                .sel(time=slice(self.refps, self.refpe))
-                .groupby("time.month")
-                .mean("time")
-            )
-        if self.use_esgf is False:
-            self.historical_period = (
-                get_cmip(
-                    "CMIP",
-                    self.table_id,
-                    self.variable_id,
-                    "historical",
-                    self.institution_id,
-                    self.source_id,
-                    self.member_id,
-                )
-                .sel(time=slice(self.refps, self.refpe))
-                .groupby("time.month")
-                .mean("time")
-            )
-        # print("historical period set... ")
-        if self.use_esgf is True:
-            self.reference_period = (
-                get_esgf(
-                    activity_id="CMIP6",
-                    table_id=self.table_id,
-                    variable_id=self.variable_id,
-                    experiment_id="historical",
-                    source_id=self.source_id,
-                    member_id=self.member_id,
-                    node=self.node,
-                )
-                .sel(time=slice("1981-01-15", "2010-12-15"))
-                .groupby("time.month")
-                .mean("time")
-            )
-        if self.use_esgf is False:
-            self.reference_period = (
-                get_cmip(
-                    "CMIP",
-                    self.table_id,
-                    self.variable_id,
-                    "historical",
-                    self.institution_id,
-                    self.source_id,
-                    self.member_id,
-                )
-                .sel(time=slice("1981-01-15", "2010-12-15"))
-                .groupby("time.month")
-                .mean("time")
-            )
-        # print("reference period set... done")
+        future_period = loader(
+            activity_id=activity_id,
+            experiment_id=experiment_id,
+            **kwargs,
+        )
+        historical_period = loader(
+            activity_id=historical_activity_id,
+            experiment_id="historical",
+            **kwargs,
+        )
+
+        self.future_period = subset_ma(future_period, fut_startdate, fut_enddate)
+        self.historical_period = subset_ma(historical_period, ref_startdate, ref_enddate)
+        self.reference_period = subset_ma(historical_period, "1981-01-15", "2010-12-15")
+        self.variable_id = variable_id
 
     def get_anomaly(self, period):
         """
@@ -186,6 +110,11 @@ class cmip6_clim:
             "lon"
         )  # res1 = res.assign_coords({"lon": (((res.lon) % 360) - 180)}) #bugfix
         return res1
+
+
+def subset_ma(ds: xr.Dataset, start: str, end: str) -> xr.Dataset:
+    return ds.sel(time=slice(start, end)).groupby("time.month").mean("time")
+
 
 def chelsa_cmip6(
     source_id: str,
@@ -330,4 +259,3 @@ def get_average_year(date_start_string: str, date_end_string: str) -> int:
     date_start = datetime.datetime.strptime(date_start_string, "%Y-%m-%d")
     date_end = datetime.datetime.strptime(date_end_string, "%Y-%m-%d")
     return np.mean([date_start.year, date_end.year]).__round__()
-
