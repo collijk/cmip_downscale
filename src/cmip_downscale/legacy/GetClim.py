@@ -188,61 +188,6 @@ class cmip6_clim:
         return res1
 
 
-class CmipClimat:
-    """
-    Climatology data class for monthly cmip 6 climatological normals
-
-    :param activity_id: the activity_id according to CMIP6
-    :param table_id: the table id according to CMIP6
-    :param experiment_id: the experiment_id according to CMIP6
-    :param instituion_id: the instituion_id according to CMIP6
-    :param source_id: the source_id according to CMIP6
-    :param member_id: the member_id according to CMIP6
-    :param ref_startdate: Starting date of the reference_period
-    :param ref_enddate: End date of the reference_period
-    :param fut_startdate: Start date of the future future_period
-    :param fut_enddate: End date of the future_period
-    :param use_esgf: Use ESGF node instead of Pangeo
-    :param node: string, address of the ESFG node, default=https://esgf.ceda.ac.uk/esg-search
-    """
-
-    def __init__(
-        self,
-        activity_id,
-        table_id,
-        experiment_id,
-        institution_id,
-        source_id,
-        member_id,
-        ref_startdate,
-        ref_enddate,
-        fut_startdate,
-        fut_enddate,
-        use_esgf,
-        node,
-    ):
-        for var in ["pr", "tas", "tasmax", "tasmin"]:
-            setattr(
-                self,
-                var,
-                cmip6_clim(
-                    activity_id=activity_id,
-                    table_id=table_id,
-                    variable_id=var,
-                    experiment_id=experiment_id,
-                    institution_id=institution_id,
-                    source_id=source_id,
-                    member_id=member_id,
-                    ref_startdate=ref_startdate,
-                    ref_enddate=ref_enddate,
-                    fut_startdate=fut_startdate,
-                    fut_enddate=fut_enddate,
-                    use_esgf=use_esgf,
-                    node=node,
-                ),
-            )
-
-
 class DeltaChangeClim:
     """
     Delta change method class
@@ -257,7 +202,7 @@ class DeltaChangeClim:
     """
 
     def __init__(
-        self, chelsa_data, CmipClimat, refps, refpe, fefps, fefpe, output=False
+        self, chelsa_data, cmip_data, refps, refpe, fefps, fefpe, output=False
     ):
         self.output = output
         self.refps = refps
@@ -283,7 +228,7 @@ class DeltaChangeClim:
                 chelsa = chelsa_data[var].rename(
                     {"time": "month", "Band1": var}
                 )
-                cmip_anomaly = getattr(CmipClimat, var).get_anomaly(per)
+                cmip_anomaly = cmip_data[var].get_anomaly(per)
                 interp = cmip_anomaly.interp(lat=chelsa["lat"], lon=chelsa["lon"])
                 result = op(chelsa, interp)
 
@@ -294,47 +239,6 @@ class DeltaChangeClim:
                 ]
 
                 setattr(self, str(per + "_" + var), result)
-
-        if output:
-            print("saving files to :" + output)
-            for var in ["hist_tas", "hist_tasmax", "hist_tasmin", "hist_pr"]:
-                getattr(self, var).to_netcdf(
-                    self.output
-                    + "CHELSA_"
-                    + CmipClimat.tas.institution_id
-                    + "_"
-                    + CmipClimat.tas.source_id
-                    + "_"
-                    + var.replace("hist_", "")
-                    + "_"
-                    + CmipClimat.tas.experiment_id
-                    + "_"
-                    + CmipClimat.tas.member_id
-                    + "_"
-                    + CmipClimat.tas.refps
-                    + "_"
-                    + CmipClimat.tas.refpe
-                    + ".nc"
-                )
-            for var in ["futr_tas", "futr_tasmax", "futr_tasmin", "futr_pr"]:
-                getattr(self, var).to_netcdf(
-                    self.output
-                    + "CHELSA_"
-                    + CmipClimat.tas.institution_id
-                    + "_"
-                    + CmipClimat.tas.source_id
-                    + "_"
-                    + var.replace("futr_", "")
-                    + "_"
-                    + CmipClimat.tas.experiment_id
-                    + "_"
-                    + CmipClimat.tas.member_id
-                    + "_"
-                    + CmipClimat.tas.fefps
-                    + "_"
-                    + CmipClimat.tas.fefpe
-                    + ".nc"
-                )
 
 
 def chelsa_cmip6(
@@ -396,20 +300,23 @@ def chelsa_cmip6(
         Address of the ESFG node, default=https://esgf.ceda.ac.uk/esg-search.
     """
     print("start downloading CMIP data:")
-    cm_climat = CmipClimat(
-        activity_id=activity_id,
-        table_id=table_id,
-        experiment_id=experiment_id,
-        institution_id=institution_id,
-        source_id=source_id,
-        member_id=member_id,
-        ref_startdate=refps,
-        ref_enddate=refpe,
-        fut_startdate=fefps,
-        fut_enddate=fefpe,
-        use_esgf=use_esgf,
-        node=node,
-    )
+    cmip_data = {
+        var: cmip6_clim(
+            activity_id=activity_id,
+            table_id=table_id,
+            variable_id=var,
+            experiment_id=experiment_id,
+            institution_id=institution_id,
+            source_id=source_id,
+            member_id=member_id,
+            ref_startdate=refps,
+            ref_enddate=refpe,
+            fut_startdate=fefps,
+            fut_enddate=fefpe,
+            use_esgf=use_esgf,
+            node=node,
+        ) for var in ["pr", "tas", "tasmax", "tasmin"]
+    }
 
     print(
         "start downloading CHELSA data (depending on your internet speed this might take a while...)"
@@ -420,24 +327,23 @@ def chelsa_cmip6(
     }
 
     print("applying delta change:")
-    dc = DeltaChangeClim(chelsa_data, cm_climat, refps, refpe, fefps, fefpe, output)
+    dc = DeltaChangeClim(chelsa_data, cmip_data, refps, refpe, fefps, fefpe, output)
 
     print("start building climatologies data:")
     biohist = BioClim(dc.hist_pr, dc.hist_tas, dc.hist_tasmax, dc.hist_tasmin)
     biofutr = BioClim(dc.futr_pr, dc.futr_tas, dc.futr_tasmax, dc.futr_tasmin)
 
-    assert cm_climat.tas.institution_id == institution_id
-    assert cm_climat.tas.source_id == source_id
-    assert cm_climat.tas.experiment_id == experiment_id
-    assert cm_climat.tas.member_id == member_id
-    assert cm_climat.tas.refps == refps
-    assert cm_climat.tas.refpe == refpe
-    assert cm_climat.tas.fefps == fefps
-    assert cm_climat.tas.fefpe == fefpe
+    name_template = f"CHELSA_{institution_id}_{source_id}_{{var}}_{experiment_id}_{member_id}_{{start}}_{{end}}.nc"
+
+    print("saving climatologies:")
+    for start, end, label in [(refps, refpe, 'hist'), (fefps, fefpe, 'futr')]:
+        for var in ["pr", "tas", "tasmax", "tasmin"]:
+            file_name = name_template.format(var=var, start=start, end=end)
+            getattr(dc, label + "_" + var).to_netcdf(file_name)
 
     print("saving bioclims:")
-    name_template = f"CHELSA_{institution_id}_{source_id}_{{var}}_{experiment_id}_{member_id}_{{start}}_{{end}}.nc"
     for start, end, data in [(refps, refpe, biohist), (fefps, fefpe, biofutr)]:
         for var in ['gdd'] + [f'bio{i}' for i in range(1, 20)]:
             file_name = name_template.format(var=var, start=start, end=end)
             getattr(data, var)().to_netcdf(file_name)
+
