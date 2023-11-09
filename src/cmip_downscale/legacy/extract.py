@@ -152,10 +152,9 @@ def get_chelsa(
 
         with fsspec.open(url) as fobj:
             ds = xr.open_dataset(fobj).chunk({"lat": 500, "lon": 500})
-            ds = ds.sel(
-                lat=slice(ymax, ymin),
-                lon=slice(xmin, xmax),
-            )
+            mask_lon = (ds.lon >= xmin) & (ds.lon <= xmax)
+            mask_lat = (ds.lat >= ymin) & (ds.lat <= ymax)
+            ds = ds.where(mask_lon & mask_lat, drop=True)
             ds.load()
         data.append(ds)
 
