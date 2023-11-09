@@ -1,127 +1,11 @@
 import datetime
 
 import fsspec
-import gcsfs
 import numpy as np
-import pandas as pd
 import xarray as xr
-from dask.diagnostics import ProgressBar
-from pyesgf.search import SearchConnection
 
 from cmip_downscale.legacy.BioClim import BioClim
-
-
-def _get_esgf(
-    activity_id,
-    table_id,
-    variable_id,
-    experiment_id,
-    source_id,
-    member_id,
-    frequency_id="mon",
-    node="https://esgf.ceda.ac.uk/esg-search",
-):
-    """
-    Get CMIP model from ESGF via lazy loading.
-
-    :param activity_id: the activity_id according to CMIP6
-    :param table_id: the table id according to CMIP6
-    :param experiment_id: the experiment_id according to CMIP6
-    :param instituion_id: the instituion_id according to CMIP6
-    :param source_id: the source_id according to CMIP6
-    :param member_id: the member_id according to CMIP6
-    :param frequency_id: the freqency_id according to CMIP6
-    :param node: ESGF search node, default: https://esgf.ceda.ac.uk/esg-search
-
-    :return: xarray dataset
-    :rtype: xarray
-    """
-    conn = SearchConnection(node, distrib=True)
-
-    ctx = conn.new_context(
-        project=activity_id,
-        source_id=source_id,
-        table_id=table_id,
-        experiment_id=experiment_id,
-        variable=variable_id,
-        variant_label=member_id,
-        frequency=frequency_id,
-    )
-
-    result = ctx.search()[0]
-    files = result.file_context().search()
-
-    ff = []
-    for file in files:
-        print(file.opendap_url)
-        ff.append(file.opendap_url)
-
-    ds = xr.open_mfdataset(ff, combine="nested", concat_dim="time")
-
-    try:
-        ds["time"] = np.sort(ds["time"].values)
-    except Exception:
-        pass
-
-    return ds
-
-
-def _get_cmip(
-    activity_id,
-    table_id,
-    variable_id,
-    experiment_id,
-    instituion_id,
-    source_id,
-    member_id,
-):
-    """
-    Get CMIP model from Google Cloud storage via lazy loading.
-
-    :param activity_id: the activity_id according to CMIP6
-    :param table_id: the table id according to CMIP6
-    :param experiment_id: the experiment_id according to CMIP6
-    :param instituion_id: the instituion_id according to CMIP6
-    :param source_id: the source_id according to CMIP6
-    :param member_id: the member_id according to CMIP6
-
-    :return: xarray dataset
-    :rtype: xarray
-    """
-    gcs = gcsfs.GCSFileSystem(token="anon")
-    df = pd.read_csv(
-        "https://storage.googleapis.com/cmip6/cmip6-zarr-consolidated-stores.csv"
-    )
-    search_string = (
-        "activity_id == '"
-        + activity_id
-        + "' & table_id == '"
-        + table_id
-        + "' & variable_id == '"
-        + variable_id
-        + "' & experiment_id == '"
-        + experiment_id
-        + "' & institution_id == '"
-        + instituion_id
-        + "' & source_id == '"
-        + source_id
-        + "' & member_id == '"
-        + member_id
-        + "'"
-    )
-    df_ta = df.query(search_string)
-    # get the path to a specific zarr store (the first one from the dataframe above)
-    zstore = df_ta.zstore.values[-1]
-    # create a mutable-mapping-style interface to the store
-    mapper = gcs.get_mapper(zstore)
-    # open it using xarray and zarr
-    ds = xr.open_zarr(mapper, consolidated=True)
-    try:
-        ds["time"] = np.sort(ds["time"].values)
-    except Exception:
-        pass
-
-    return ds
+from cmip_downscale.legacy.extract import get_esgf, get_cmip
 
 
 class interpol:
@@ -221,7 +105,7 @@ class cmip6_clim:
     :param table_id: the table id according to CMIP6
     :param experiment_id: the experiment_id according to CMIP6
     :param variable_id: the variable shortname according to CMIP6
-    :param instituion_id: the instituion_id according to CMIP6
+    :param institution_id: the instituion_id according to CMIP6
     :param source_id: the source_id according to CMIP6
     :param member_id: the member_id according to CMIP6
     :param ref_startdate: Starting date of the reference_period
@@ -264,7 +148,7 @@ class cmip6_clim:
 
         if self.use_esgf is True:
             self.future_period = (
-                _get_esgf(
+                get_esgf(
                     activity_id=self.activity_id,
                     table_id=self.table_id,
                     variable_id=self.variable_id,
@@ -279,7 +163,7 @@ class cmip6_clim:
             )
         if self.use_esgf is False:
             self.future_period = (
-                _get_cmip(
+                get_cmip(
                     self.activity_id,
                     self.table_id,
                     self.variable_id,
@@ -295,7 +179,7 @@ class cmip6_clim:
         # print("future data loaded... ")
         if self.use_esgf is True:
             self.historical_period = (
-                _get_esgf(
+                get_esgf(
                     activity_id="CMIP6",
                     table_id=self.table_id,
                     variable_id=self.variable_id,
@@ -310,7 +194,7 @@ class cmip6_clim:
             )
         if self.use_esgf is False:
             self.historical_period = (
-                _get_cmip(
+                get_cmip(
                     "CMIP",
                     self.table_id,
                     self.variable_id,
@@ -326,14 +210,14 @@ class cmip6_clim:
         # print("historical period set... ")
         if self.use_esgf is True:
             self.reference_period = (
-                _get_esgf(
+                get_esgf(
                     activity_id="CMIP6",
                     table_id=self.table_id,
                     variable_id=self.variable_id,
                     experiment_id="historical",
                     source_id=self.source_id,
                     member_id=self.member_id,
-                    node_id=self.node,
+                    node=self.node,
                 )
                 .sel(time=slice("1981-01-15", "2010-12-15"))
                 .groupby("time.month")
@@ -341,7 +225,7 @@ class cmip6_clim:
             )
         if self.use_esgf is False:
             self.reference_period = (
-                _get_cmip(
+                get_cmip(
                     "CMIP",
                     self.table_id,
                     self.variable_id,
@@ -500,8 +384,6 @@ class DeltaChangeClim:
         ).__round__()
 
         for per in ["futr", "hist"]:
-            # setattr(self, str(per + '_pr'), getattr(ChelsaClimat, 'pr').to_dataset(name='pr').rename({'time': 'month'}).drop('band') * interpol(
-            #        getattr(CmipClimat, 'pr').get_anomaly(per), getattr(ChelsaClimat, 'pr')).interpolate())
             setattr(
                 self,
                 str(per + "_pr"),
@@ -512,8 +394,6 @@ class DeltaChangeClim:
                 ).interpolate(),
             )
             for var in ["tas", "tasmax", "tasmin"]:
-                # setattr(self, str(per + '_' + var), getattr(ChelsaClimat, var).to_dataset(name=var).rename({'time': 'month'}).drop('band') + interpol(
-                #        getattr(CmipClimat, var).get_anomaly(per), getattr(ChelsaClimat, var)).interpolate())
                 setattr(
                     self,
                     str(per + "_" + var),
@@ -577,61 +457,78 @@ class DeltaChangeClim:
 
 
 def chelsa_cmip6(
-    source_id,
-    institution_id,
-    table_id,
-    activity_id,
-    experiment_id,
-    member_id,
-    refps,
-    refpe,
-    fefps,
-    fefpe,
-    xmin,
-    xmax,
-    ymin,
-    ymax,
-    output,
-    use_esgf=False,
-    node="https://esgf.ceda.ac.uk/esg-search",
+    source_id: str,
+    institution_id: str,
+    table_id: str,
+    activity_id: str,
+    experiment_id: str,
+    member_id: str,
+    refps: str,
+    refpe: str,
+    fefps: str,
+    fefpe: str,
+    xmin: float,
+    xmax: float,
+    ymin: float,
+    ymax: float,
+    output: str,
+    use_esgf: bool = False,
+    node: str = "https://esgf.ceda.ac.uk/esg-search",
 ):
-    """
-    Calculate chelsa cmip 6 climatological normals and bioclimatic variables
+    """Calculate chelsa cmip 6 climatological normals and bio-climatic variables
 
-    :param activity_id: the activity_id according to CMIP6
-    :param table_id: the table id according to CMIP6
-    :param experiment_id: the experiment_id according to CMIP6
-    :param instituion_id: the instituion_id according to CMIP6
-    :param source_id: the source_id according to CMIP6
-    :param member_id: the member_id according to CMIP6
-    :param refps: Starting date of the reference_period
-    :param refpe: End date of the reference_period
-    :param fefps: Start date of the future future_period
-    :param fefpe: End date of the future_period
-    :param xmin: Minimum longitude [Decimal degree]
-    :param xmax: Maximum longitude [Decimal degree]
-    :param ymin: Minimum latitude [Decimal degree]
-    :param ymax: Maximum latitude [Decimal degree]
-    :param output: output directory, string
-    :param use_esgf: bollean, Use ESGF node instead of Pangeo, default=False
-    :param node: string, address of the ESFG node, default=https://esgf.ceda.ac.uk/esg-search
+    Parameters
+    ----------
+    source_id
+        Source model (GCM), e.g. MPI-ESM1-2-LR.
+    institution_id
+        Institution ID, e.g. MPI-M.
+    table_id
+        Table ID, e.g. Amon.
+    activity_id
+        Activity ID, e.g. CMIP.
+    experiment_id
+        Experiment ID, e.g. historical.
+    member_id
+        Member ID, e.g. r1i1p1f1.
+    refps
+        Starting date of the reference_period, e.g. 1981-01-01.
+    refpe
+        End date of the reference_period, e.g. 2010-12-31.
+    fefps
+        Start date of the future future_period, e.g. 2071-01-01.
+    fefpe
+        End date of the future_period, e.g. 2100-12-31.
+    xmin
+        Minimum longitude [Decimal degree].
+    xmax
+        Maximum longitude [Decimal degree].
+    ymin
+        Minimum latitude [Decimal degree].
+    ymax
+        Maximum latitude [Decimal degree].
+    output
+        Directory to write results to.
+    use_esgf
+        Use ESGF node instead of Pangeo, default=False.
+    node
+        Address of the ESFG node, default=https://esgf.ceda.ac.uk/esg-search.
     """
     print("start downloading CMIP data:")
-    with ProgressBar():
-        cm_climat = CmipClimat(
-            activity_id=activity_id,
-            table_id=table_id,
-            experiment_id=experiment_id,
-            institution_id=institution_id,
-            source_id=source_id,
-            member_id=member_id,
-            ref_startdate=refps,
-            ref_enddate=refpe,
-            fut_startdate=fefps,
-            fut_enddate=fefpe,
-            use_esgf=use_esgf,
-            node=node,
-        )
+    cm_climat = CmipClimat(
+        activity_id=activity_id,
+        table_id=table_id,
+        experiment_id=experiment_id,
+        institution_id=institution_id,
+        source_id=source_id,
+        member_id=member_id,
+        ref_startdate=refps,
+        ref_enddate=refpe,
+        fut_startdate=fefps,
+        fut_enddate=fefpe,
+        use_esgf=use_esgf,
+        node=node,
+    )
 
     print(
         "start downloading CHELSA data (depending on your internet speed this might take a while...)"
@@ -639,13 +536,11 @@ def chelsa_cmip6(
     ch_climat = ChelsaClimat(xmin, xmax, ymin, ymax)
 
     print("applying delta change:")
-    with ProgressBar():
-        dc = DeltaChangeClim(ch_climat, cm_climat, refps, refpe, fefps, fefpe, output)
+    dc = DeltaChangeClim(ch_climat, cm_climat, refps, refpe, fefps, fefpe, output)
 
     print("start building climatologies data:")
-    with ProgressBar():
-        biohist = BioClim(dc.hist_pr, dc.hist_tas, dc.hist_tasmax, dc.hist_tasmin)
-        biofutr = BioClim(dc.futr_pr, dc.futr_tas, dc.futr_tasmax, dc.futr_tasmin)
+    biohist = BioClim(dc.hist_pr, dc.hist_tas, dc.hist_tasmax, dc.hist_tasmin)
+    biofutr = BioClim(dc.futr_pr, dc.futr_tas, dc.futr_tasmax, dc.futr_tasmin)
 
     print("saving bioclims:")
     for n in range(1, 20):
