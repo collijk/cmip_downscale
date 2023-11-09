@@ -187,60 +187,6 @@ class cmip6_clim:
         )  # res1 = res.assign_coords({"lon": (((res.lon) % 360) - 180)}) #bugfix
         return res1
 
-
-class DeltaChangeClim:
-    """
-    Delta change method class
-
-    :param ChelsaClimat: A Chelsa data class containing the clipped CHELSA V2.1 climatological normals
-    :param CmipClimat: A Climatology data class for monthly cmip 6 climatological normals
-    :param refps: Starting date of the reference_period
-    :param refpe: End date of the reference_period
-    :param refps: Start date of the future future_period
-    :param fefpe: End date of the future_period
-    :param output: bollean: should the output be saved as a file, defaults to False
-    """
-
-    def __init__(
-        self, chelsa_data, cmip_data, refps, refpe, fefps, fefpe, output=False
-    ):
-        self.output = output
-        self.refps = refps
-        self.refpe = refpe
-        self.fefps = fefps
-        self.fefpe = fefpe
-        self.hist_year = np.mean(
-            [
-                int(datetime.datetime.strptime(refps, "%Y-%m-%d").year),
-                int(datetime.datetime.strptime(refpe, "%Y-%m-%d").year),
-            ]
-        ).__round__()
-        self.futr_year = np.mean(
-            [
-                int(datetime.datetime.strptime(fefps, "%Y-%m-%d").year),
-                int(datetime.datetime.strptime(fefpe, "%Y-%m-%d").year),
-            ]
-        ).__round__()
-
-        for per in ["futr", "hist"]:
-            for var in ["pr", "tas", "tasmax", "tasmin"]:
-                op = operator.mul if var in ["pr"] else operator.add
-                chelsa = chelsa_data[var].rename(
-                    {"time": "month", "Band1": var}
-                )
-                cmip_anomaly = cmip_data[var].get_anomaly(per)
-                interp = cmip_anomaly.interp(lat=chelsa["lat"], lon=chelsa["lon"])
-                result = op(chelsa, interp)
-
-                year = getattr(self, per + "_year")
-                result["month"] = [
-                    datetime.datetime(year, month, 15)
-                    for month in result["month"].values
-                ]
-
-                setattr(self, str(per + "_" + var), result)
-
-
 def chelsa_cmip6(
     source_id: str,
     institution_id: str,
@@ -256,7 +202,7 @@ def chelsa_cmip6(
     xmax: float,
     ymin: float,
     ymax: float,
-    output: str,
+    output: str = None,
     use_esgf: bool = False,
     node: str = "https://esgf.ceda.ac.uk/esg-search",
 ):
@@ -327,23 +273,61 @@ def chelsa_cmip6(
     }
 
     print("applying delta change:")
-    dc = DeltaChangeClim(chelsa_data, cmip_data, refps, refpe, fefps, fefpe, output)
+    dc = {}
+    for var in ["pr", "tas", "tasmax", "tasmin"]:
+        cmip = cmip_data[var]
+        chelsa = chelsa_data[var]
+        op = operator.mul if var in ["pr"] else operator.add
+
+        for start, end, period in [(refps, refpe, 'hist'), (fefps, fefpe, 'futr')]:
+            anomaly = cmip.get_anomaly(period)
+            interp = anomaly.interp(lat=chelsa["lat"], lon=chelsa["lon"])
+            result = op(chelsa, interp)
+
+            year = get_average_year(start, end)
+            result["month"] = [
+                datetime.datetime(year, month, 15)
+                for month in result["month"].values
+            ]
+
+            dc[period + "_" + var] = result
 
     print("start building climatologies data:")
-    biohist = BioClim(dc.hist_pr, dc.hist_tas, dc.hist_tasmax, dc.hist_tasmin)
-    biofutr = BioClim(dc.futr_pr, dc.futr_tas, dc.futr_tasmax, dc.futr_tasmin)
+    biohist = BioClim(dc["hist_pr"], dc["hist_tas"], dc["hist_tasmax"], dc["hist_tasmin"])
+    biofutr = BioClim(dc["futr_pr"], dc["futr_tas"], dc["futr_tasmax"], dc["futr_tasmin"])
 
-    name_template = f"CHELSA_{institution_id}_{source_id}_{{var}}_{experiment_id}_{member_id}_{{start}}_{{end}}.nc"
+    if output is not None:
+        file_template = f"{output}/CHELSA_{institution_id}_{source_id}_{{var}}_{experiment_id}_{member_id}_{{start}}_{{end}}.nc"
 
-    print("saving climatologies:")
-    for start, end, label in [(refps, refpe, 'hist'), (fefps, fefpe, 'futr')]:
-        for var in ["pr", "tas", "tasmax", "tasmin"]:
-            file_name = name_template.format(var=var, start=start, end=end)
-            getattr(dc, label + "_" + var).to_netcdf(file_name)
+        print("saving climatologies:")
+        for start, end, period in [(refps, refpe, 'hist'), (fefps, fefpe, 'futr')]:
+            for var in ["pr", "tas", "tasmax", "tasmin"]:
+                file_name = file_template.format(var=var, start=start, end=end)
+                getattr(dc, period + "_" + var).to_netcdf(file_name)
 
-    print("saving bioclims:")
-    for start, end, data in [(refps, refpe, biohist), (fefps, fefpe, biofutr)]:
-        for var in ['gdd'] + [f'bio{i}' for i in range(1, 20)]:
-            file_name = name_template.format(var=var, start=start, end=end)
-            getattr(data, var)().to_netcdf(file_name)
+        print("saving bioclims:")
+        for start, end, data in [(refps, refpe, biohist), (fefps, fefpe, biofutr)]:
+            for var in ['gdd'] + [f'bio{i}' for i in range(1, 20)]:
+                file_name = file_template.format(var=var, start=start, end=end)
+                getattr(data, var)().to_netcdf(file_name)
+
+
+def get_average_year(date_start_string: str, date_end_string: str) -> int:
+    """Get the average year between two dates.
+
+    Parameters
+    ----------
+    date_start_string
+        Start date in string format, e.g. 1981-01-01.
+    date_end_string
+        End date in string format, e.g. 2010-12-31.
+
+    Returns
+    -------
+    int
+        The average year between the two dates.
+    """
+    date_start = datetime.datetime.strptime(date_start_string, "%Y-%m-%d")
+    date_end = datetime.datetime.strptime(date_end_string, "%Y-%m-%d")
+    return np.mean([date_start.year, date_end.year]).__round__()
 

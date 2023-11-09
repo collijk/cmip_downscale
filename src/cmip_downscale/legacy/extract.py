@@ -159,6 +159,8 @@ def get_chelsa(
         data.append(ds)
 
     ds = xr.concat(data, "time")
-    res = ds.assign(Band1=ds["Band1"] * 0.1)
+    res = ds.assign(Band1=ds["Band1"] * 0.1).rename(
+        {"time": "month", "Band1": variable_id}
+    )
 
     return res
