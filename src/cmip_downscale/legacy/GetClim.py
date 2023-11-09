@@ -188,22 +188,6 @@ class cmip6_clim:
         return res1
 
 
-class ChelsaClimat:
-    """
-    Chelsa data class containing the clipped CHELSA V2.1 climatological normals
-
-    :param xmin: Minimum longitude [Decimal degree]
-    :param xmax: Maximum longitude [Decimal degree]
-    :param ymin: Minimum latitude [Decimal degree]
-    :param ymax: Maximum latitude [Decimal degree]
-    """
-
-    def __init__(self, xmin, xmax, ymin, ymax):
-        for var in ["pr", "tas", "tasmax", "tasmin"]:
-            print("getting variable: " + var)
-            setattr(self, var, get_chelsa(var, xmin, xmax, ymin, ymax))
-
-
 class CmipClimat:
     """
     Climatology data class for monthly cmip 6 climatological normals
@@ -273,7 +257,7 @@ class DeltaChangeClim:
     """
 
     def __init__(
-        self, ChelsaClimat, CmipClimat, refps, refpe, fefps, fefpe, output=False
+        self, chelsa_data, CmipClimat, refps, refpe, fefps, fefpe, output=False
     ):
         self.output = output
         self.refps = refps
@@ -296,7 +280,7 @@ class DeltaChangeClim:
         for per in ["futr", "hist"]:
             for var in ["pr", "tas", "tasmax", "tasmin"]:
                 op = operator.mul if var in ["pr"] else operator.add
-                chelsa = getattr(ChelsaClimat, var).rename(
+                chelsa = chelsa_data[var].rename(
                     {"time": "month", "Band1": var}
                 )
                 cmip_anomaly = getattr(CmipClimat, var).get_anomaly(per)
@@ -430,10 +414,13 @@ def chelsa_cmip6(
     print(
         "start downloading CHELSA data (depending on your internet speed this might take a while...)"
     )
-    ch_climat = ChelsaClimat(xmin, xmax, ymin, ymax)
+    chelsa_data = {
+        var: get_chelsa(var, xmin, xmax, ymin, ymax)
+        for var in ["pr", "tas", "tasmax", "tasmin"]
+    }
 
     print("applying delta change:")
-    dc = DeltaChangeClim(ch_climat, cm_climat, refps, refpe, fefps, fefpe, output)
+    dc = DeltaChangeClim(chelsa_data, cm_climat, refps, refpe, fefps, fefpe, output)
 
     print("start building climatologies data:")
     biohist = BioClim(dc.hist_pr, dc.hist_tas, dc.hist_tasmax, dc.hist_tasmin)
