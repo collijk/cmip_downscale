@@ -56,7 +56,7 @@ class cmip6_clim:
         else:
             loader = get_cmip
             kwargs['institution_id'] = institution_id
-            historical_activity_id = "CMIP6"
+            historical_activity_id = "CMIP"
 
         future_period = loader(
             activity_id=activity_id,
