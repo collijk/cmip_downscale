@@ -426,14 +426,14 @@ def chelsa_cmip6(
     biohist = BioClim(dc.hist_pr, dc.hist_tas, dc.hist_tasmax, dc.hist_tasmin)
     biofutr = BioClim(dc.futr_pr, dc.futr_tas, dc.futr_tasmax, dc.futr_tasmin)
 
-    assert cmip6_clim.tas.institution_id == institution_id
-    assert cmip6_clim.tas.source_id == source_id
-    assert cmip6_clim.tas.experiment_id == experiment_id
-    assert cmip6_clim.tas.member_id == member_id
-    assert cmip6_clim.tas.refps == refps
-    assert cmip6_clim.tas.refpe == refpe
-    assert cmip6_clim.tas.fefps == fefps
-    assert cmip6_clim.tas.fefpe == fefpe
+    assert cm_climat.tas.institution_id == institution_id
+    assert cm_climat.tas.source_id == source_id
+    assert cm_climat.tas.experiment_id == experiment_id
+    assert cm_climat.tas.member_id == member_id
+    assert cm_climat.tas.refps == refps
+    assert cm_climat.tas.refpe == refpe
+    assert cm_climat.tas.fefps == fefps
+    assert cm_climat.tas.fefpe == fefpe
 
     print("saving bioclims:")
     name_template = f"CHELSA_{institution_id}_{source_id}_{{var}}_{experiment_id}_{member_id}_{{start}}_{{end}}.nc"
