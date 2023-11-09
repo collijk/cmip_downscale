@@ -1,4 +1,5 @@
 import datetime
+import operator
 
 import fsspec
 import numpy as np
@@ -8,26 +9,8 @@ from cmip_downscale.legacy.BioClim import BioClim
 from cmip_downscale.legacy.extract import get_esgf, get_cmip
 
 
-class interpol:
-    """
-    Spatial interpolation class for xarray datasets
 
-    :param ds: an xarray dataset
-    :param template: a xarray dataset with the target resolution
-    :return: a spatially, to the resoluton of the template, interpolated xarray
-    :rtype: xarray
-    """
-
-    def __init__(self, ds, template):
-        self.ds = ds
-        self.template = template
-
-    def interpolate(self):
-        res = self.ds.interp(lat=self.template["lat"], lon=self.template["lon"])
-        return res
-
-
-class chelsaV2:
+class Chelsav2:
     """
     Class to download and clip data from the CHELSA V2.1 normals (climatologies)
     for a specific bounding box delimited by minimum and maximum latitude and longitude
@@ -291,7 +274,7 @@ class ChelsaClimat:
     def __init__(self, xmin, xmax, ymin, ymax):
         for var in ["pr", "tas", "tasmax", "tasmin"]:
             print("getting variable: " + var)
-            setattr(self, var, chelsaV2(xmin, xmax, ymin, ymax, var).get_chelsa())
+            setattr(self, var, Chelsav2(xmin, xmax, ymin, ymax, var).get_chelsa())
 
 
 class CmipClimat:
@@ -384,25 +367,15 @@ class DeltaChangeClim:
         ).__round__()
 
         for per in ["futr", "hist"]:
-            setattr(
-                self,
-                str(per + "_pr"),
-                getattr(ChelsaClimat, "pr").rename({"time": "month", "Band1": "pr"})
-                * interpol(
-                    getattr(CmipClimat, "pr").get_anomaly(per),
-                    getattr(ChelsaClimat, "pr"),
-                ).interpolate(),
-            )
-            for var in ["tas", "tasmax", "tasmin"]:
-                setattr(
-                    self,
-                    str(per + "_" + var),
-                    getattr(ChelsaClimat, var).rename({"time": "month", "Band1": var})
-                    + interpol(
-                        getattr(CmipClimat, var).get_anomaly(per),
-                        getattr(ChelsaClimat, var),
-                    ).interpolate(),
-                )
+            for var in ["pr", "tas", "tasmax", "tasmin"]:
+                op = operator.mul if var in ["pr"] else operator.add
+                chelsa = getattr(ChelsaClimat, var).rename({"time": "month", "Band1": var})
+                cmip_anomaly = getattr(CmipClimat, var).get_anomaly(per)
+                interp = cmip_anomaly.interp(lat=chelsa['lat'], lon=chelsa['lon'])
+                result = op(chelsa, interp)
+
+                setattr(self, str(per + "_" + var), result)
+
 
         for var in ["tas", "tasmax", "tasmin", "pr"]:
             getattr(self, str("futr_" + var))["month"] = [
