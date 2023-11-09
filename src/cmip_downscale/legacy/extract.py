@@ -1,8 +1,9 @@
+import fsspec
 import gcsfs
-import pandas as pd
-from pyesgf.search import SearchConnection
-import xarray as xr
 import numpy as np
+import pandas as pd
+import xarray as xr
+from pyesgf.search import SearchConnection
 
 
 def get_esgf(
@@ -133,3 +134,32 @@ def get_cmip(
     ds["time"] = np.sort(ds["time"].values)
 
     return ds
+
+
+def get_chelsa(
+    variable_id: str,
+    xmin: float,
+    xmax: float,
+    ymin: float,
+    ymax: float,
+) -> xr.Dataset:
+    """Download data from chelsa"""
+    chelsa_root = "https://os.zhdk.cloud.switch.ch/envicloud/chelsa/chelsa_V2/GLOBAL/climatologies/1981-2010/ncdf/CHELSA"
+
+    data = []
+    for month in range(1, 13):
+        url = f"{chelsa_root}_{variable_id}_{month:02d}_1981-2010_V.2.1.nc"
+
+        with fsspec.open(url) as fobj:
+            ds = xr.open_dataset(fobj).chunk({"lat": 500, "lon": 500})
+            ds = ds.sel(
+                lat=slice(ymax, ymin),
+                lon=slice(xmin, xmax),
+            )
+            ds.load()
+        data.append(ds)
+
+    ds = xr.concat(data, "time")
+    res = ds.assign(Band1=ds["Band1"] * 0.1)
+
+    return res

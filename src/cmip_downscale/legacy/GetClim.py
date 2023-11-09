@@ -1,83 +1,10 @@
 import datetime
 import operator
 
-import fsspec
 import numpy as np
-import xarray as xr
 
 from cmip_downscale.legacy.BioClim import BioClim
-from cmip_downscale.legacy.extract import get_esgf, get_cmip
-
-
-
-class Chelsav2:
-    """
-    Class to download and clip data from the CHELSA V2.1 normals (climatologies)
-    for a specific bounding box delimited by minimum and maximum latitude and longitude
-
-    :param xmin: Minimum longitude [Decimal degree]
-    :param xmax: Maximum longitude [Decimal degree]
-    :param ymin: Minimum latitude [Decimal degree]
-    :param ymax: Maximum latitude [Decimal degree]
-    :param variable_id: id of the variable that needs to be downloaded (e.g. 'tas')
-
-    """
-
-    def __init__(self, xmin, xmax, ymin, ymax, variable_id):
-        self.xmin = xmin
-        self.xmax = xmax
-        self.ymin = ymin
-        self.ymax = ymax
-        self.variable_id = variable_id
-
-    def _crop_ds_(self, ds):
-        """
-        clip xarray
-
-        :param ds: a xarray to_dataset
-        :return: clipped xarray
-        :rtype: xarray
-        """
-        mask_lon = (ds.lon >= self.xmin) & (ds.lon <= self.xmax)
-        mask_lat = (ds.lat >= self.ymin) & (ds.lat <= self.ymax)
-        cropped_ds = ds.where(mask_lon & mask_lat, drop=True)
-        return cropped_ds
-
-    def get_chelsa(self):
-        """
-        download chelsa
-
-        :return: cropped xarray
-        :rtype: xarray
-        """
-
-        a = []
-        for month in range(1, 13):
-            url = (
-                "https://os.zhdk.cloud.switch.ch/envicloud/chelsa/chelsa_V2/GLOBAL/climatologies/1981-2010/ncdf/CHELSA_"
-                + self.variable_id
-                + "_"
-                + "%02d" % (month,)
-                + "_1981-2010_V.2.1.nc"
-            )
-            with fsspec.open(url) as fobj:
-                ds = xr.open_dataset(fobj).chunk({"lat": 500, "lon": 500})
-                ds = self._crop_ds_(ds)
-                ds.load()
-            a.append(ds)
-
-        ds = xr.concat([i for i in a], "time")
-
-        if (
-            self.variable_id == "tas"
-            or self.variable_id == "tasmin"
-            or self.variable_id == "tasmax"
-        ):
-            res = ds.assign(Band1=ds["Band1"] * 0.1)
-        if self.variable_id == "pr":
-            res = ds.assign(Band1=ds["Band1"] * 0.1)
-
-        return res
+from cmip_downscale.legacy.extract import get_chelsa, get_cmip, get_esgf
 
 
 class cmip6_clim:
@@ -274,7 +201,7 @@ class ChelsaClimat:
     def __init__(self, xmin, xmax, ymin, ymax):
         for var in ["pr", "tas", "tasmax", "tasmin"]:
             print("getting variable: " + var)
-            setattr(self, var, Chelsav2(xmin, xmax, ymin, ymax, var).get_chelsa())
+            setattr(self, var, get_chelsa(var, xmin, xmax, ymin, ymax))
 
 
 class CmipClimat:
@@ -369,9 +296,11 @@ class DeltaChangeClim:
         for per in ["futr", "hist"]:
             for var in ["pr", "tas", "tasmax", "tasmin"]:
                 op = operator.mul if var in ["pr"] else operator.add
-                chelsa = getattr(ChelsaClimat, var).rename({"time": "month", "Band1": var})
+                chelsa = getattr(ChelsaClimat, var).rename(
+                    {"time": "month", "Band1": var}
+                )
                 cmip_anomaly = getattr(CmipClimat, var).get_anomaly(per)
-                interp = cmip_anomaly.interp(lat=chelsa['lat'], lon=chelsa['lon'])
+                interp = cmip_anomaly.interp(lat=chelsa["lat"], lon=chelsa["lon"])
                 result = op(chelsa, interp)
 
                 year = getattr(self, per + "_year")
