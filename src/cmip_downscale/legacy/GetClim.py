@@ -1,119 +1,14 @@
 import datetime
 import operator
 
-import numpy as np
-import xarray as xr
-
 from cmip_downscale.legacy.BioClim import BioClim
 from cmip_downscale.legacy.extract import get_chelsa, get_cmip, get_esgf
-
-
-class cmip6_clim:
-    """
-    Climatology class for monthly climatologies for CMIP6 data
-
-    :param activity_id: the activity_id according to CMIP6
-    :param table_id: the table id according to CMIP6
-    :param experiment_id: the experiment_id according to CMIP6
-    :param variable_id: the variable shortname according to CMIP6
-    :param institution_id: the instituion_id according to CMIP6
-    :param source_id: the source_id according to CMIP6
-    :param member_id: the member_id according to CMIP6
-    :param ref_startdate: Starting date of the reference_period
-    :param ref_enddate: End date of the reference_period
-    :param fut_startdate: Start date of the future future_period
-    :param fut_enddate: End date of the future_period
-    :param use_esgf: Use ESGF node instead of Pangeo
-    :param node: string, address of the ESFG node, default=https://esgf.ceda.ac.uk/esg-search
-    """
-
-    def __init__(
-        self,
-        activity_id,
-        table_id,
-        variable_id,
-        experiment_id,
-        institution_id,
-        source_id,
-        member_id,
-        ref_startdate,
-        ref_enddate,
-        fut_startdate,
-        fut_enddate,
-        use_esgf,
-        node,
-    ):
-        kwargs = {
-            "table_id": table_id,
-            "variable_id": variable_id,
-            "source_id": source_id,
-            "member_id": member_id,
-        }
-        if use_esgf:
-            loader = get_esgf
-            kwargs['node'] = node
-            historical_activity_id = "CMIP6"
-        else:
-            loader = get_cmip
-            kwargs['institution_id'] = institution_id
-            historical_activity_id = "CMIP"
-
-        future_period = loader(
-            activity_id=activity_id,
-            experiment_id=experiment_id,
-            **kwargs,
-        )
-        historical_period = loader(
-            activity_id=historical_activity_id,
-            experiment_id="historical",
-            **kwargs,
-        )
-
-        self.future_period = subset_ma(future_period, fut_startdate, fut_enddate)
-        self.historical_period = subset_ma(historical_period, ref_startdate, ref_enddate)
-        self.reference_period = subset_ma(historical_period, "1981-01-15", "2010-12-15")
-        self.variable_id = variable_id
-
-    def get_anomaly(self, period):
-        """
-        Get climatological anomaly between the reference and future future_period
-
-        :param period:  either future (futr) or historical (hist)
-        :return: anomaly
-        :rtype: xarray
-        """
-        if period == "futr":
-            if (
-                self.variable_id == "tas"
-                or self.variable_id == "tasmin"
-                or self.variable_id == "tasmax"
-            ):
-                res = self.future_period - self.reference_period  # additive anomaly
-            if self.variable_id == "pr":
-                res = (self.future_period * 86400 + 0.01) / (
-                    self.reference_period * 86400 + 0.01
-                )  # multiplicative anomaly
-
-        if period == "hist":
-            if (
-                self.variable_id == "tas"
-                or self.variable_id == "tasmin"
-                or self.variable_id == "tasmax"
-            ):
-                res = self.historical_period - self.reference_period  # additive anomaly
-            if self.variable_id == "pr":
-                res = (self.historical_period * 86400 + 0.01) / (
-                    self.reference_period * 86400 + 0.01
-                )  # multiplicative anomaly
-
-        res1 = res.assign_coords(lon=(((res.lon + 180) % 360) - 180)).sortby(
-            "lon"
-        )  # res1 = res.assign_coords({"lon": (((res.lon) % 360) - 180)}) #bugfix
-        return res1
-
-
-def subset_ma(ds: xr.Dataset, start: str, end: str) -> xr.Dataset:
-    return ds.sel(time=slice(start, end)).groupby("time.month").mean("time")
+from cmip_downscale.legacy.transform import (
+    additive_anomaly,
+    multiplicative_anomaly,
+    subset_ma,
+    get_average_year,
+)
 
 
 def chelsa_cmip6(
@@ -174,24 +69,39 @@ def chelsa_cmip6(
     node
         Address of the ESFG node, default=https://esgf.ceda.ac.uk/esg-search.
     """
-    print("start downloading CMIP data:")
-    cmip_data = {
-        var: cmip6_clim(
-            activity_id=activity_id,
-            table_id=table_id,
-            variable_id=var,
-            experiment_id=experiment_id,
-            institution_id=institution_id,
-            source_id=source_id,
-            member_id=member_id,
-            ref_startdate=refps,
-            ref_enddate=refpe,
-            fut_startdate=fefps,
-            fut_enddate=fefpe,
-            use_esgf=use_esgf,
-            node=node,
-        ) for var in ["pr", "tas", "tasmax", "tasmin"]
+    kwargs = {
+        "table_id": table_id,
+        "source_id": source_id,
+        "member_id": member_id,
     }
+    if use_esgf:
+        loader = get_esgf
+        kwargs['node'] = node
+        historical_activity_id = "CMIP6"
+    else:
+        loader = get_cmip
+        kwargs['institution_id'] = institution_id
+        historical_activity_id = "CMIP"
+
+    print("start downloading CMIP data:")
+    cmip_data = {}
+    for var in ["pr", "tas", "tasmax", "tasmin"]:
+        reference_period = loader(
+            variable_id=var,
+            activity_id=historical_activity_id,
+            experiment_id="historical",
+            **kwargs,
+        )
+        future_period = loader(
+            variable_id=var,
+            activity_id=activity_id,
+            experiment_id=experiment_id,
+            **kwargs,
+        )
+        cmip_data[var] = {
+            "reference": subset_ma(reference_period, refps, refpe),
+            "future": subset_ma(future_period, fefps, fefpe),
+        }
 
     print(
         "start downloading CHELSA data (depending on your internet speed this might take a while...)"
@@ -207,55 +117,32 @@ def chelsa_cmip6(
         cmip = cmip_data[var]
         chelsa = chelsa_data[var]
         op = operator.mul if var in ["pr"] else operator.add
+        get_anomaly = multiplicative_anomaly if var in ["pr"] else additive_anomaly
 
-        for start, end, period in [(refps, refpe, 'hist'), (fefps, fefpe, 'futr')]:
-            anomaly = cmip.get_anomaly(period)
-            interp = anomaly.interp(lat=chelsa["lat"], lon=chelsa["lon"])
-            result = op(chelsa, interp)
+        anomaly = get_anomaly(cmip['reference'], cmip['future'])
+        interp = anomaly.interp(lat=chelsa["lat"], lon=chelsa["lon"])
+        result = op(chelsa, interp)
 
-            year = get_average_year(start, end)
-            result["month"] = [
-                datetime.datetime(year, month, 15)
-                for month in result["month"].values
-            ]
+        year = get_average_year(fefps, fefpe)
+        result["month"] = [
+            datetime.datetime(year, month, 15)
+            for month in result["month"].values
+        ]
 
-            dc[period + "_" + var] = result
+        dc[var] = result
 
     print("start building climatologies data:")
-    biohist = BioClim(dc["hist_pr"], dc["hist_tas"], dc["hist_tasmax"], dc["hist_tasmin"])
-    biofutr = BioClim(dc["futr_pr"], dc["futr_tas"], dc["futr_tasmax"], dc["futr_tasmin"])
+    bioclim = BioClim(dc["pr"], dc["tas"], dc["tasmax"], dc["tasmin"])
 
     if output is not None:
-        file_template = f"{output}/CHELSA_{institution_id}_{source_id}_{{var}}_{experiment_id}_{member_id}_{{start}}_{{end}}.nc"
+        file_template = f"{output}/CHELSA_{institution_id}_{source_id}_{{var}}_{experiment_id}_{member_id}_{fefps}_{fefpe}.nc"
 
         print("saving climatologies:")
-        for start, end, period in [(refps, refpe, 'hist'), (fefps, fefpe, 'futr')]:
-            for var in ["pr", "tas", "tasmax", "tasmin"]:
-                file_name = file_template.format(var=var, start=start, end=end)
-                dc[f"{period}_{var}"].to_netcdf(file_name)
+        for var in ["pr", "tas", "tasmax", "tasmin"]:
+            file_name = file_template.format(var=var)
+            dc[var].to_netcdf(file_name)
 
         print("saving bioclims:")
-        for start, end, data in [(refps, refpe, biohist), (fefps, fefpe, biofutr)]:
-            for var in ['gdd'] + [f'bio{i}' for i in range(1, 20)]:
-                file_name = file_template.format(var=var, start=start, end=end)
-                getattr(data, var)().to_netcdf(file_name)
-
-
-def get_average_year(date_start_string: str, date_end_string: str) -> int:
-    """Get the average year between two dates.
-
-    Parameters
-    ----------
-    date_start_string
-        Start date in string format, e.g. 1981-01-01.
-    date_end_string
-        End date in string format, e.g. 2010-12-31.
-
-    Returns
-    -------
-    int
-        The average year between the two dates.
-    """
-    date_start = datetime.datetime.strptime(date_start_string, "%Y-%m-%d")
-    date_end = datetime.datetime.strptime(date_end_string, "%Y-%m-%d")
-    return np.mean([date_start.year, date_end.year]).__round__()
+        for var in ['gdd'] + [f'bio{i}' for i in range(1, 20)]:
+            file_name = file_template.format(var=var)
+            getattr(bioclim, var)().to_netcdf(file_name)
